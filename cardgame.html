@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>카드 도박 게임 최종</title>
+<style>
+body { font-family: Arial; background:#222; color:#fff; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; }
+.ui-box { position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.7); padding:15px; border-radius:10px; text-align:left; }
+.ui-box div { margin:5px 0; }
+#resetButton { position:absolute; top:10px; right:10px; background:red; color:white; border:none; padding:10px 15px; border-radius:5px; font-weight:bold; cursor:pointer; }
+#playButton { margin-top:10px; padding:10px 20px; font-size:16px; cursor:pointer; }
+#message { color:red; font-weight:bold; margin-top:5px; height:20px; }
+.inventory-label { position:absolute; right:10px; top:45%; font-weight:bold; font-size:16px; }
+.inventory { display:grid; grid-template-columns: repeat(4, 70px); grid-auto-rows: 100px; gap:10px; position:absolute; right:10px; top:50%; transform: translateY(-50%);}
+.inv-slot { position: relative; background:#333; border-radius:5px; display:flex; justify-content:center; align-items:center; cursor:pointer; }
+.inv-slot img { width:60px; height:90px; object-fit:cover; border-radius:5px; }
+.inv-count { position:absolute; bottom:2px; right:2px; background: rgba(0,0,0,0.7); padding: 2px 4px; border-radius:3px; font-size:14px; font-weight:bold; }
+#largeCardBox { display:flex; flex-direction:column; align-items:center; margin-top:50px; border:2px solid #fff; width:300px; height:450px; justify-content:center; position:relative; border-radius:10px; }
+#largeCard { width:250px; height:350px; object-fit:cover; border-radius:10px; cursor:pointer; }
+#largeCardName { position:absolute; top:10px; font-size:24px; font-weight:bold; color:#fff; text-shadow: 1px 1px 2px #000; }
+#largeCardCount { margin-top:10px; font-size:20px; text-align:center; }
+#leafDisplayBelow { margin-top:10px; font-size:18px; text-align:center; }
+#buyTable { position:absolute; left:10px; top:180px; background:rgba(0,0,0,0.7); padding:10px; border-radius:10px; }
+#buyTable table { border-collapse: collapse; color:#fff; }
+#buyTable th, #buyTable td { padding:5px 10px; border:1px solid #fff; text-align:center; }
+#buyTitle { position:absolute; left:10px; top:150px; font-size:18px; font-weight:bold; color:#fff; }
+h3 { text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="ui-box">
+  <div id="goldDisplay">보유한 골드: 1000</div>
+  <div>
+    <input type="number" id="convertGoldInput" min="1" value="1" style="width:80px;">
+    <button onclick="convertToLeaf()">1골드당 10나뭇잎</button>
+  </div>
+</div>
+
+<button id="resetButton" onclick="reset()">리셋</button>
+
+<div id="largeCardBox">
+  <div id="largeCardName"></div>
+  <img id="largeCard" src="딸깍.jpg">
+  <div id="largeCardCount"></div>
+  <div id="message"></div>
+</div>
+
+<button id="playButton">딸-깍</button>
+<div id="leafDisplayBelow">보유한 나뭇잎: 10</div>
+
+<h3>인이의 도박대</h3>
+
+<div class="inventory-label">인벤토리</div>
+<div class="inventory" id="inventory"></div>
+
+<div id="buyTitle">카드 구매/판매</div>
+<div id="buyTable">
+  <table>
+    <tr><th>카드</th><th>가격</th><th>구매</th><th>판매</th></tr>
+  </table>
+</div>
+
+<audio id="clickSound" src="버튼.mp3"></audio>
+
+<script>
+const cardTypes = {
+  "연인": {value:200, count:9, img:"연인.jpg", maxBet:4},
+  "운명의바퀴": {value:100, count:16, img:"운명의바퀴.jpg", maxBet:9},
+  "심판": {value:25, count:9, img:"심판.jpg", maxBet:5},
+  "마술사": {value:6, count:9, img:"마술사.jpg", maxBet:4},
+  "황제": {value:30, count:9, img:"황제.jpg", maxBet:4},
+  "매달린 사람": {value:5, count:13, img:"매달린 사람.jpg", maxBet:7},
+  "악마": {value:70, count:16, img:"악마.jpg", maxBet:9}
+};
+
+let gold = 1000;
+let leaf = 10;
+let inventory = [];
+let bettingTable = {};
+
+const inventoryContainer = document.getElementById("inventory");
+const messageDiv = document.getElementById("message");
+const playButton = document.getElementById("playButton");
+const largeCardNameDiv = document.getElementById("largeCardName");
+
+function updateDisplays(){
+  document.getElementById("goldDisplay").innerText = `보유한 골드: ${gold}`;
+  document.getElementById("leafDisplayBelow").innerText = `보유한 나뭇잎: ${leaf}`;
+  renderInventory();
+  renderLargeCard();
+
+  // 배팅 최대수 체크
+  const firstCard = Object.keys(bettingTable)[0];
+  if(firstCard && bettingTable[firstCard]>=cardTypes[firstCard].maxBet){
+    playButton.disabled = true;
+  } else {
+    playButton.disabled = Object.keys(bettingTable).length===0 || leaf<10;
+  }
+}
+
+function convertToLeaf(){
+  const amount = parseInt(document.getElementById("convertGoldInput").value);
+  if(amount<=0 || amount>gold){ alert("골드 부족"); return; }
+  gold -= amount;
+  leaf += amount*10;
+  updateDisplays();
+}
+
+function addInventoryCard(name,count=1){
+  const item = inventory.find(c=>c.name===name);
+  if(item) item.count += count;
+  else inventory.push({name,count});
+  updateDisplays();
+}
+
+function removeInventoryCard(name,count=1){
+  const item = inventory.find(c=>c.name===name);
+  if(item){
+    item.count -= count;
+    if(item.count<=0) inventory = inventory.filter(c=>c.name!==name);
+  }
+}
+
+function renderInventory(){
+  inventoryContainer.innerHTML="";
+  inventory.forEach(item=>{
+    let remaining = item.count;
+    while(remaining>0){
+      const slotCount = Math.min(remaining, cardTypes[item.name].count);
+      const slot = document.createElement("div");
+      slot.className="inv-slot";
+      const img = document.createElement("img");
+      img.src=cardTypes[item.name].img;
+      const countDiv = document.createElement("div");
+      countDiv.className="inv-count";
+      countDiv.innerText=`${slotCount}/${cardTypes[item.name].count}`;
+      slot.appendChild(img);
+      slot.appendChild(countDiv);
+      slot.onclick=()=>{ addToBetting(item.name); };
+      inventoryContainer.appendChild(slot);
+      remaining -= slotCount;
+    }
+  });
+}
+
+function addToBetting(name){
+  const invItem = inventory.find(c=>c.name===name);
+  if(!invItem) return;
+
+  const currentCard = Object.keys(bettingTable)[0];
+  if(currentCard && currentCard !== name){
+    const returningCount = bettingTable[currentCard];
+    addInventoryCard(currentCard,returningCount);
+    bettingTable = {};
+  }
+
+  const currentCount = bettingTable[name]||0;
+  const maxBet = cardTypes[name].maxBet;
+
+  if(currentCount >= maxBet){
+    messageDiv.innerText = "카드가 너무 많습니다";
+    return;
+  }
+
+  removeInventoryCard(name,1);
+  bettingTable[name] = currentCount + 1;
+  messageDiv.innerText = "";
+  updateDisplays();
+}
+
+function renderLargeCard(){
+  const firstCard = Object.keys(bettingTable)[0];
+  const largeCard = document.getElementById("largeCard");
+  const countDiv = document.getElementById("largeCardCount");
+  if(firstCard){
+    largeCard.src = cardTypes[firstCard].img;
+    countDiv.innerText = `${bettingTable[firstCard]}/${cardTypes[firstCard].count}`;
+    largeCardNameDiv.innerText = firstCard;
+  } else {
+    largeCard.src = "딸깍.jpg";
+    countDiv.innerText = "";
+    largeCardNameDiv.innerText = "";
+  }
+}
+
+document.getElementById("largeCard").onclick = function(e){
+  const firstCard = Object.keys(bettingTable)[0];
+  if(!firstCard) return;
+
+  if(e.shiftKey){
+    bettingTable[firstCard]--;
+    addInventoryCard(firstCard,1);
+    if(bettingTable[firstCard]<=0) delete bettingTable[firstCard];
+  } else {
+    const removedCount = bettingTable[firstCard];
+    addInventoryCard(firstCard,removedCount);
+    delete bettingTable[firstCard];
+  }
+  updateDisplays();
+}
+
+function play(){
+  const firstCard = Object.keys(bettingTable)[0];
+  if(!firstCard || leaf<10) return;
+
+  const sound = document.getElementById("clickSound");
+  sound.currentTime=0;
+  sound.play();
+
+  leaf -= 10;
+
+  const currentCount = bettingTable[firstCard];
+  const maxGain = currentCount*2;
+  let result = Math.floor(Math.random()*(maxGain+1));
+
+  // 최대 카드수 제한
+  if(result>cardTypes[firstCard].maxBet){
+    bettingTable[firstCard] = cardTypes[firstCard].maxBet;
+    messageDiv.innerText = "카드가 너무 많습니다";
+  } else if(result === currentCount){
+    messageDiv.innerText = "아무 일도 일어나지 않았다!";
+    bettingTable[firstCard] = result;
+  } else {
+    bettingTable[firstCard] = result;
+    messageDiv.innerText = "";
+  }
+
+  // 카드가 0장이 되면 파산 이미지
+  if(bettingTable[firstCard] <= 0){
+    delete bettingTable[firstCard];
+    document.getElementById("largeCard").src = "파산.jpg";
+    largeCardNameDiv.innerText="";
+  }
+
+  updateDisplays();
+}
+
+playButton.addEventListener("click", play);
+
+function reset(){
+  gold=1000; leaf=10; inventory=[]; bettingTable={};
+  document.getElementById("message").innerText="";
+  document.getElementById("largeCard").src="딸깍.jpg";
+  largeCardNameDiv.innerText="";
+  updateDisplays();
+}
+
+// 구매/판매
+const buyTable = document.querySelector("#buyTable table");
+function setupBuyTable(){
+  for(let name in cardTypes){
+    const row = document.createElement("tr");
+    row.innerHTML=`<td>${name}</td><td>${cardTypes[name].value}골드</td>
+    <td><button>구매</button></td>
+    <td><button>판매</button></td>`;
+    row.querySelectorAll("button")[0].onclick=()=>{ buyCard(name); };
+    row.querySelectorAll("button")[1].onclick=()=>{ sellCard(name); };
+    buyTable.appendChild(row);
+  }
+}
+
+function buyCard(name){
+  if(gold<cardTypes[name].value){ alert("골드 부족"); return; }
+  gold -= cardTypes[name].value;
+  addInventoryCard(name,1);
+  updateDisplays();
+}
+
+function sellCard(name){
+  const item = inventory.find(c=>c.name===name);
+  if(!item || item.count<=0){ alert("카드 없음"); return; }
+  gold += cardTypes[name].value;
+  removeInventoryCard(name,1);
+  updateDisplays();
+}
+
+setupBuyTable();
+updateDisplays();
+</script>
+</body>
+</html>
